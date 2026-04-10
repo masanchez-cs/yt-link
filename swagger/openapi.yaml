@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info:
+  title: ytLink API local
+  version: 0.1.0
+  description: API mínima para iniciar descargas vía yt-dlp y recibir progreso por SSE.
+servers:
+  - url: http://localhost:3847/api
+paths:
+  /health:
+    get:
+      summary: Estado del servicio
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessHealth'
+  /downloads:
+    post:
+      summary: Inicia una descarga
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDownload'
+      responses:
+        '200':
+          description: Trabajo creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessCreateDownload'
+        '400':
+          description: Validación fallida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /downloads/{id}/events:
+    get:
+      summary: Progreso (Server-Sent Events)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Stream `text/event-stream` con eventos JSON en `data`
+        '404':
+          description: Trabajo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+components:
+  schemas:
+    SuccessHealth:
+      type: object
+      required: [success, data, message, trace_id]
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            ok:
+              type: boolean
+        message:
+          type: string
+        trace_id:
+          type: string
+    CreateDownload:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+        formatPreset:
+          type: string
+          enum: [mp4_best, mp3, best]
+          default: best
+        playlistMode:
+          type: string
+          enum: [auto, video_only]
+          default: auto
+    SuccessCreateDownload:
+      type: object
+      required: [success, data, message, trace_id]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          required: [job_id, download_dir]
+          properties:
+            job_id:
+              type: string
+            download_dir:
+              type: string
+        message:
+          type: string
+        trace_id:
+          type: string
+    ApiError:
+      type: object
+      required: [success, error_code, message, details, trace_id]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error_code:
+          type: string
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            type: object
+        trace_id:
+          type: string

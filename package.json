@@ -1,0 +1,35 @@
+{
+  "name": "ytlink",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Descargador local de YouTube (React + Koa + yt-dlp)",
+  "scripts": {
+    "dev": "concurrently -k \"node app.js\" \"npm run dev --prefix client\"",
+    "dev:server": "node app.js",
+    "dev:client": "npm run dev --prefix client",
+    "start": "cross-env NODE_ENV=production node app.js",
+    "build": "npm run build --prefix client",
+    "start:prod": "npm run build && cross-env NODE_ENV=production node app.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@koa/cors": "^5.0.0",
+    "@koa/router": "^12.0.1",
+    "dotenv": "^16.4.7",
+    "joi": "^17.13.3",
+    "koa": "^2.15.4",
+    "koa-body": "^6.0.1",
+    "koa-send": "^5.0.1",
+    "koa-static": "^5.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/__tests__/**/*.test.js"]
+  }
+}
