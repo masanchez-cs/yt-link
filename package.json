@@ -10,11 +10,16 @@
     "start": "cross-env NODE_ENV=production node app.js",
     "build": "npm run build --prefix client",
     "start:prod": "npm run build && cross-env NODE_ENV=production node app.js",
+    "zip:eb": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-eb-zip.ps1",
     "test": "jest"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@koa/cors": "^5.0.0",
     "@koa/router": "^12.0.1",
+    "cross-env": "^7.0.3",
     "dotenv": "^16.4.7",
     "joi": "^17.13.3",
     "koa": "^2.15.4",
@@ -24,7 +29,6 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
-    "cross-env": "^7.0.3",
     "jest": "^29.7.0",
     "supertest": "^7.0.0"
   },

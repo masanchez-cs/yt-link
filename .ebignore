@@ -1,0 +1,13 @@
+# Elastic Beanstalk: excluye del ZIP de despliegue (la instancia ejecutará npm install en la raíz).
+node_modules/
+client/node_modules/
+.git/
+.gitignore
+.env
+.env.*
+*.log
+npm-debug.log*
+__tests__/
+coverage/
+.vscode/
+.idea/

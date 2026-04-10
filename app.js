@@ -28,9 +28,24 @@ app.use(async (ctx, next) => {
   await next();
 });
 
+function corsOriginsList() {
+  const raw = process.env.CORS_ORIGIN || 'http://localhost:5173';
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin(ctx) {
+      const allowed = corsOriginsList();
+      const reqOrigin = ctx.get('Origin');
+      if (!reqOrigin) {
+        return '';
+      }
+      return allowed.includes(reqOrigin) ? reqOrigin : false;
+    },
     credentials: true,
   }),
 );

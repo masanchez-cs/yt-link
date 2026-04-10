@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { apiUrl } from './config.js';
 import {
   Button,
   Container,
@@ -84,7 +85,7 @@ export default function App() {
 
   const startListening = useCallback(
     (jobId) => {
-      const es = new EventSource(`/api/downloads/${jobId}/events`);
+      const es = new EventSource(apiUrl(`/api/downloads/${jobId}/events`));
       sourcesRef.current.set(jobId, es);
 
       es.onmessage = (event) => {
@@ -164,7 +165,7 @@ export default function App() {
     setFormError('');
     setBusy(true);
     try {
-      const res = await fetch('/api/downloads', {
+      const res = await fetch(apiUrl('/api/downloads'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
