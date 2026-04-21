@@ -1,9 +1,27 @@
+const fs = require('fs');
 const { spawn } = require('child_process');
 const path = require('path');
 const {
   resolveYtDlpExecutable,
   normalizeExecutablePath,
 } = require('../system/resolveYtDlp');
+
+/**
+ * Archivo Netscape cookies para yt-dlp (--cookies). Útil en IPs de datacenter (p. ej. AWS).
+ * https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies
+ */
+function resolveYtDlpCookiesPath() {
+  const raw = process.env.YTLINK_YTDLP_COOKIES_FILE;
+  if (raw == null || String(raw).trim() === '') {
+    return { path: null, missingRequested: false, requested: '' };
+  }
+  const requested = String(raw).trim();
+  const abs = path.resolve(requested);
+  if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+    return { path: abs, missingRequested: false, requested: abs };
+  }
+  return { path: null, missingRequested: true, requested: abs };
+}
 
 const PROGRESS_RE = /\[download\]\s+(\d{1,3}\.\d)%/;
 const MERGER_RE = /\[Merger\]\s+Merging formats into\s+"(.+?)"/;
@@ -25,6 +43,11 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
   const ffmpegLoc = normalizeExecutablePath(process.env.FFMPEG_PATH);
   if (ffmpegLoc) {
     args.push('--ffmpeg-location', ffmpegLoc);
+  }
+
+  const cookies = resolveYtDlpCookiesPath();
+  if (cookies.path) {
+    args.push('--cookies', cookies.path);
   }
 
   if (playlistMode === 'video_only') {
@@ -50,6 +73,14 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
 
 function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
   const bin = ytDlpBinary();
+  const cookies = resolveYtDlpCookiesPath();
+  if (cookies.missingRequested) {
+    onEvent({
+      type: 'log',
+      stream: 'stderr',
+      message: `[ytlink] YTLINK_YTDLP_COOKIES_FILE no existe o no es un archivo: ${cookies.requested}`,
+    });
+  }
   const args = buildArgs({ url, formatPreset, playlistMode, outDir });
   const child = spawn(bin, args, {
     shell: false,
@@ -134,4 +165,4 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
   });
 }
 
-module.exports = { runYtDlp, ytDlpBinary, buildArgs };
+module.exports = { runYtDlp, ytDlpBinary, buildArgs, resolveYtDlpCookiesPath };

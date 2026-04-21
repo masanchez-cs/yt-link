@@ -9,6 +9,7 @@
     "dev:client": "npm run dev --prefix client",
     "start": "cross-env NODE_ENV=production node app.js",
     "build": "npm run build --prefix client",
+    "zip:eb:ci": "bash scripts/build-eb-artifact.sh",
     "start:prod": "npm run build && cross-env NODE_ENV=production node app.js",
     "zip:eb": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-eb-zip.ps1",
     "test": "jest"

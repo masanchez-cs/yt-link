@@ -53,15 +53,59 @@ Get-ChildItem -Path $temp -Filter ".env*" -Recurse -Force -ErrorAction SilentlyC
 Get-ChildItem -Path $temp -Filter "ytlink-eb-*.zip" -Recurse -ErrorAction SilentlyContinue |
   Remove-Item -Force -ErrorAction SilentlyContinue
 
+# EB exige package.json y app.js en la raíz del ZIP (no dentro de una subcarpeta).
+if (-not (Test-Path -LiteralPath (Join-Path $temp "package.json"))) {
+  Write-Host "Error: falta package.json en la copia de despliegue (revisa robocopy)." -ForegroundColor Red
+  exit 1
+}
+if (-not (Test-Path -LiteralPath (Join-Path $temp "app.js"))) {
+  Write-Host "Error: falta app.js en la copia de despliegue." -ForegroundColor Red
+  exit 1
+}
+
 Write-Host ""
-Write-Host "=== [3/3] Creando ZIP ===" -ForegroundColor Cyan
+Write-Host "=== [3/3] Creando ZIP (rutas con / para Linux / Elastic Beanstalk) ===" -ForegroundColor Cyan
 
 $zipPath = Join-Path $root $zipName
 if (Test-Path $zipPath) {
   Remove-Item $zipPath -Force
 }
 
-Compress-Archive -Path (Join-Path $temp "*") -DestinationPath $zipPath -Force
+# Compress-Archive en Windows guarda '\' dentro del ZIP; unzip en Linux de EB falla.
+# ZipArchive con nombres de entrada normalizados a '/' (estándar ZIP / Unix).
+# No usar FullName.Substring(base.Length): en Windows 8.3 vs ruta larga deja prefijos basura (p. ej. "9/app.js")
+# y EB no encuentra package.json en la raíz.
+Add-Type -AssemblyName System.IO.Compression
+$baseFull = [System.IO.Path]::GetFullPath((Get-Item -LiteralPath $temp).FullName).TrimEnd('\')
+$baseUri = New-Object Uri ($baseFull + [System.IO.Path]::DirectorySeparatorChar)
+$zipStream = [System.IO.File]::Open($zipPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+try {
+  $zip = [System.IO.Compression.ZipArchive]::new($zipStream, [System.IO.Compression.ZipArchiveMode]::Create)
+  try {
+    Get-ChildItem -LiteralPath $baseFull -Recurse -File | ForEach-Object {
+      $full = [System.IO.Path]::GetFullPath($_.FullName)
+      $rel = [Uri]::UnescapeDataString($baseUri.MakeRelativeUri([Uri](New-Object Uri $full)).ToString())
+      if ([string]::IsNullOrEmpty($rel)) { return }
+      $entryName = $rel.TrimStart('\') -replace '\\', '/'
+      $entry = $zip.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+      $dest = $entry.Open()
+      try {
+        $src = [System.IO.File]::OpenRead($full)
+        try {
+          $src.CopyTo($dest)
+        } finally {
+          $src.Dispose()
+        }
+      } finally {
+        $dest.Dispose()
+      }
+    }
+  } finally {
+    $zip.Dispose()
+  }
+} finally {
+  $zipStream.Dispose()
+}
 
 Remove-Item $temp -Recurse -Force
 
