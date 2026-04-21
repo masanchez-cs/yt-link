@@ -9,6 +9,7 @@ ZIP_NAME="ytlink-eb.zip"
 echo ""
 echo "=== [1/3] Instalando dependencias ==="
 npm ci
+NODE_ENV=development npm ci --prefix client
 
 echo ""
 echo "=== [2/3] Build del frontend ==="
