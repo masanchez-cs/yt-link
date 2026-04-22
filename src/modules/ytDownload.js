@@ -48,6 +48,9 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
   const cookies = resolveYtDlpCookiesPath();
   if (cookies.path) {
     args.push('--cookies', cookies.path);
+    // Forzar el cliente "web": los clientes android/android_vr ignoran cookies
+    // y caen en el bot-check de YouTube desde IPs de datacenter (AWS).
+    args.push('--extractor-args', 'youtube:player_client=web');
   }
 
   if (playlistMode === 'video_only') {
