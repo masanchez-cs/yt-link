@@ -25,9 +25,18 @@ function resolveYtDlpCookiesPath() {
 
 const PROGRESS_RE = /\[download\]\s+(\d{1,3}\.\d)%/;
 const MERGER_RE = /\[Merger\]\s+Merging formats into\s+"(.+?)"/;
+const DEFAULT_YT_PLAYER_CLIENTS = 'tv_embedded,mweb,web_safari,default';
 
 function ytDlpBinary() {
   return resolveYtDlpExecutable();
+}
+
+function resolvePlayerClientsArg() {
+  const raw = process.env.YTLINK_YTDLP_PLAYER_CLIENTS;
+  if (raw == null || String(raw).trim() === '') {
+    return DEFAULT_YT_PLAYER_CLIENTS;
+  }
+  return String(raw).trim();
 }
 
 function buildArgs({ url, formatPreset, playlistMode, outDir }) {
@@ -48,15 +57,13 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
   const cookies = resolveYtDlpCookiesPath();
   if (cookies.path) {
     args.push('--cookies', cookies.path);
-    // Desde IPs de datacenter (AWS) YouTube gatilla bot-check aunque haya
-    // cookies validas. Usar varios clients da mas fallbacks: "default" incluye
-    // mweb/web_safari, "tv_embedded" usa la API de TV que muchas veces no
-    // pide PO token. yt-dlp prueba en orden hasta que alguno funcione.
-    args.push(
-      '--extractor-args',
-      'youtube:player_client=default,tv_embedded,web_safari',
-    );
   }
+  // Desde IPs de datacenter (AWS) YouTube gatilla bot-check incluso sin cookies.
+  // Forzamos varios clients en orden y dejamos override por env para ajustes finos.
+  args.push(
+    '--extractor-args',
+    `youtube:player_client=${resolvePlayerClientsArg()}`,
+  );
 
   if (playlistMode === 'video_only') {
     args.push('--no-playlist');
