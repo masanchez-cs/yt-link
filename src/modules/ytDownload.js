@@ -26,6 +26,7 @@ function resolveYtDlpCookiesPath() {
 const PROGRESS_RE = /\[download\]\s+(\d{1,3}\.\d)%/;
 const MERGER_RE = /\[Merger\]\s+Merging formats into\s+"(.+?)"/;
 const DEFAULT_YT_PLAYER_CLIENTS = 'tv_embedded,mweb,web_safari,default';
+const BOT_CHECK_RE = /Sign in to confirm you(?:'|’)re not a bot/i;
 
 function ytDlpBinary() {
   return resolveYtDlpExecutable();
@@ -37,6 +38,15 @@ function resolvePlayerClientsArg() {
     return DEFAULT_YT_PLAYER_CLIENTS;
   }
   return String(raw).trim();
+}
+
+function resolveYoutubeExtractorArgsValue() {
+  const parts = [`player_client=${resolvePlayerClientsArg()}`];
+  const extra = process.env.YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS;
+  if (extra != null && String(extra).trim() !== '') {
+    parts.push(String(extra).trim());
+  }
+  return `youtube:${parts.join(';')}`;
 }
 
 function buildArgs({ url, formatPreset, playlistMode, outDir }) {
@@ -62,7 +72,7 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
   // Forzamos varios clients en orden y dejamos override por env para ajustes finos.
   args.push(
     '--extractor-args',
-    `youtube:player_client=${resolvePlayerClientsArg()}`,
+    resolveYoutubeExtractorArgsValue(),
   );
 
   if (playlistMode === 'video_only') {
@@ -110,6 +120,14 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
     if (!text) return;
 
     onEvent({ type: 'log', stream, message: text });
+    if (stream === 'stderr' && BOT_CHECK_RE.test(text)) {
+      onEvent({
+        type: 'log',
+        stream: 'stderr',
+        message:
+          '[ytlink] YouTube bot-check detectado. Verifica YTLINK_YTDLP_COOKIES_FILE y, si persiste, define YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS con po_token.',
+      });
+    }
 
     const m = text.match(PROGRESS_RE);
     if (m) {
