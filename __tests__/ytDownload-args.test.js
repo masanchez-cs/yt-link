@@ -1,7 +1,7 @@
 const path = require('path');
 
 describe('buildArgs youtube extractor args', () => {
-  const { buildArgs } = require('../src/modules/ytDownload');
+  const { buildArgs, buildDirectUrlArgs } = require('../src/modules/ytDownload');
   const prevClients = process.env.YTLINK_YTDLP_PLAYER_CLIENTS;
   const prevExtraExtractorArgs = process.env.YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS;
   const prevProxy = process.env.YTLINK_YTDLP_PROXY;
@@ -76,5 +76,28 @@ describe('buildArgs youtube extractor args', () => {
     expect(args.some((a) => String(a).startsWith('youtube:player_client='))).toBe(
       false,
     );
+  });
+
+  it('buildDirectUrlArgs usa -g y formato mp4 progresivo por defecto', () => {
+    const args = buildDirectUrlArgs({
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      formatPreset: 'best',
+      playlistMode: 'video_only',
+    });
+    expect(args).toContain('-g');
+    expect(args).toContain('-f');
+    expect(args).toContain('best[ext=mp4]/best');
+    expect(args).toContain('--no-playlist');
+  });
+
+  it('buildDirectUrlArgs usa bestaudio cuando el preset es mp3', () => {
+    const args = buildDirectUrlArgs({
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      formatPreset: 'mp3',
+      playlistMode: 'auto',
+    });
+    expect(args).toContain('-f');
+    expect(args).toContain('bestaudio');
+    expect(args).not.toContain('--no-playlist');
   });
 });

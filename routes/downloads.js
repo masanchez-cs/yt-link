@@ -3,7 +3,7 @@ const Joi = require('joi');
 const { success, fail } = require('../src/system/response');
 const { resolveDownloadBase } = require('../src/system/paths');
 const jobs = require('../src/system/jobs');
-const { runYtDlp } = require('../src/modules/ytDownload');
+const { runYtDlp, runYtDlpGetDirectUrl } = require('../src/modules/ytDownload');
 const { formatSpawnError } = require('../src/system/resolveYtDlp');
 
 const router = new Router();
@@ -46,6 +46,22 @@ const bodySchema = Joi.object({
     .valid('mp4_best', 'mp3', 'best')
     .default('best'),
   playlistMode: Joi.string().valid('auto', 'video_only').default('auto'),
+});
+
+const directLinkSchema = Joi.object({
+  url: Joi.string()
+    .uri()
+    .required()
+    .custom((value, helpers) => {
+      if (!isSupportedDownloadUrl(value)) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    }),
+  formatPreset: Joi.string()
+    .valid('mp4_best', 'mp3', 'best')
+    .default('best'),
+  playlistMode: Joi.string().valid('auto', 'video_only').default('video_only'),
 });
 
 router.post('/downloads', async (ctx) => {
@@ -155,6 +171,63 @@ router.post('/downloads', async (ctx) => {
       jobs.completeJob(job, 'error');
       jobs.deleteJobLater(job.id);
     });
+  });
+});
+
+router.post('/downloads/direct-link', async (ctx) => {
+  const { error, value } = directLinkSchema.validate(ctx.request.body, {
+    abortEarly: false,
+    stripUnknown: true,
+  });
+
+  if (error) {
+    const details = error.details.map((d) => ({
+      field: d.path.join('.') || 'body',
+      code: 'VALIDATION',
+      message: d.message,
+    }));
+    return fail(
+      ctx,
+      400,
+      'VALIDATION_ERROR',
+      'Revisa la URL y las opciones enviadas.',
+      details,
+    );
+  }
+
+  const startedAt = Date.now();
+  const result = await runYtDlpGetDirectUrl({
+    url: value.url,
+    formatPreset: value.formatPreset,
+    playlistMode: value.playlistMode,
+  });
+
+  if (result.spawnError) {
+    return fail(
+      ctx,
+      500,
+      'EXTERNAL_SERVICE_ERROR',
+      formatSpawnError(result.spawnError, result.spawnAttempt || ''),
+      [],
+    );
+  }
+
+  if (!result.ok) {
+    return fail(
+      ctx,
+      502,
+      'EXTERNAL_SERVICE_ERROR',
+      result.noUrlFound
+        ? 'No fue posible obtener un enlace directo temporal para reproducir.'
+        : 'No fue posible generar un enlace directo. Verifica URL/cookies y vuelve a intentar.',
+      [{ field: 'url', code: 'NO_DIRECT_URL', message: 'No direct URL returned' }],
+    );
+  }
+
+  return success(ctx, {
+    direct_url: result.directUrl,
+    expires_note: 'Enlace temporal; puede expirar en minutos.',
+    duration_ms: Date.now() - startedAt,
   });
 });
 

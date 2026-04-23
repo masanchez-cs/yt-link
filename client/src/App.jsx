@@ -61,6 +61,7 @@ export default function App() {
   const [folderHint, setFolderHint] = useState('');
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [directBusy, setDirectBusy] = useState(false);
 
   const sourcesRef = useRef(new Map());
 
@@ -196,6 +197,55 @@ export default function App() {
     }
   };
 
+  const openDirectInBrowser = async () => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) return;
+
+    setFormError('');
+    setDirectBusy(true);
+    const popup = window.open('', '_blank');
+
+    if (!popup) {
+      setDirectBusy(false);
+      setFormError(
+        'El navegador bloqueó la ventana emergente. Permite pop-ups para abrir el reproductor directo.',
+      );
+      return;
+    }
+
+    try {
+      popup.document.write(
+        '<p style="font-family:system-ui;padding:16px">Generando enlace directo temporal...</p>',
+      );
+      const res = await fetch(apiUrl('/api/downloads/direct-link'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: trimmedUrl,
+          formatPreset,
+          playlistMode,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.success || !body.data?.direct_url) {
+        popup.close();
+        const msg =
+          body.message ||
+          'No se pudo generar el enlace directo temporal. Intenta con otra URL.';
+        setFormError(msg);
+        return;
+      }
+      popup.location.href = body.data.direct_url;
+    } catch {
+      popup.close();
+      setFormError(
+        'No hay conexión con el backend local. Ejecuta el servidor y recarga.',
+      );
+    } finally {
+      setDirectBusy(false);
+    }
+  };
+
   return (
     <div className="yl-page">
       <div className="yl-aurora" aria-hidden />
@@ -269,19 +319,42 @@ export default function App() {
               />
             ) : null}
 
-            <Button
-              primary
-              type="submit"
-              fluid
-              size="large"
-              className="yl-cta"
-              loading={busy}
-              disabled={busy || !url.trim()}
-              data-testid="start-download"
+            <Button.Group fluid>
+              <Button
+                primary
+                type="submit"
+                size="large"
+                className="yl-cta"
+                loading={busy}
+                disabled={busy || directBusy || !url.trim()}
+                data-testid="start-download"
+              >
+                <Icon name="download" />
+                Descargar
+              </Button>
+              <Button.Or text="o" />
+              <Button
+                type="button"
+                size="large"
+                loading={directBusy}
+                disabled={busy || directBusy || !url.trim()}
+                onClick={openDirectInBrowser}
+                data-testid="open-direct-link"
+              >
+                <Icon name="external alternate" />
+                Abrir directo
+              </Button>
+            </Button.Group>
+            <p
+              style={{
+                marginTop: '0.6rem',
+                opacity: 0.78,
+                fontSize: '0.92rem',
+              }}
             >
-              <Icon name="download" />
-              Descargar
-            </Button>
+              "Abrir directo" usa un enlace temporal de reproducción (puede vencer
+              rápido).
+            </p>
           </Form>
         </Segment>
 

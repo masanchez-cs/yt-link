@@ -31,3 +31,14 @@ describe('downloads URL support', () => {
     ).toBe(true);
   });
 });
+
+describe('POST /api/downloads/direct-link', () => {
+  it('rechaza URL que no corresponde a orígenes soportados', async () => {
+    const res = await request(app.callback())
+      .post('/api/downloads/direct-link')
+      .send({ url: 'https://example.com/video.mp4' })
+      .expect(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error_code).toBe('VALIDATION_ERROR');
+  });
+});

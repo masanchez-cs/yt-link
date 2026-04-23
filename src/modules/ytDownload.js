@@ -77,6 +77,29 @@ function resolveProxyArg() {
   return String(raw).trim();
 }
 
+function appendNetworkAndExtractorArgs(args, url) {
+  const proxy = resolveProxyArg();
+  if (proxy) {
+    args.push('--proxy', proxy);
+  }
+
+  const cookies = resolveYtDlpCookiesPath();
+  if (cookies.path) {
+    args.push('--cookies', cookies.path);
+  }
+
+  // Solo aplica al extractor de YouTube; enlaces directos de googlevideo
+  // usan extractor genérico y no requieren estos argumentos.
+  if (shouldApplyYoutubeExtractorArgs(url)) {
+    // Desde IPs de datacenter (AWS) YouTube gatilla bot-check incluso sin cookies.
+    // Forzamos varios clients en orden y dejamos override por env para ajustes finos.
+    args.push(
+      '--extractor-args',
+      resolveYoutubeExtractorArgsValue(),
+    );
+  }
+}
+
 function buildArgs({ url, formatPreset, playlistMode, outDir }) {
   const args = [
     '--newline',
@@ -92,25 +115,7 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
     args.push('--ffmpeg-location', ffmpegLoc);
   }
 
-  const proxy = resolveProxyArg();
-  if (proxy) {
-    args.push('--proxy', proxy);
-  }
-
-  const cookies = resolveYtDlpCookiesPath();
-  if (cookies.path) {
-    args.push('--cookies', cookies.path);
-  }
-  // Solo aplica al extractor de YouTube; enlaces directos de googlevideo
-  // usan extractor genérico y no requieren estos argumentos.
-  if (shouldApplyYoutubeExtractorArgs(url)) {
-    // Desde IPs de datacenter (AWS) YouTube gatilla bot-check incluso sin cookies.
-    // Forzamos varios clients en orden y dejamos override por env para ajustes finos.
-    args.push(
-      '--extractor-args',
-      resolveYoutubeExtractorArgsValue(),
-    );
-  }
+  appendNetworkAndExtractorArgs(args, url);
 
   if (playlistMode === 'video_only') {
     args.push('--no-playlist');
@@ -127,6 +132,25 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
     default:
       args.push('-f', 'bv*+ba/b', '--merge-output-format', 'mp4');
       break;
+  }
+
+  args.push(url);
+  return args;
+}
+
+function buildDirectUrlArgs({ url, playlistMode, formatPreset }) {
+  const args = ['--no-warnings', '--newline', '-g'];
+  appendNetworkAndExtractorArgs(args, url);
+  if (playlistMode === 'video_only') {
+    args.push('--no-playlist');
+  }
+
+  // Para abrir en navegador conviene un stream único y reproducible.
+  // Si el usuario pide mp3 priorizamos audio; en otros casos preferimos MP4 progresivo.
+  if (formatPreset === 'mp3') {
+    args.push('-f', 'bestaudio');
+  } else {
+    args.push('-f', 'best[ext=mp4]/best');
   }
 
   args.push(url);
@@ -235,4 +259,101 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
   });
 }
 
-module.exports = { runYtDlp, ytDlpBinary, buildArgs, resolveYtDlpCookiesPath };
+function runYtDlpGetDirectUrl({ url, formatPreset, playlistMode, onEvent = () => {} }) {
+  const bin = ytDlpBinary();
+  const cookies = resolveYtDlpCookiesPath();
+  if (cookies.missingRequested) {
+    onEvent({
+      type: 'log',
+      stream: 'stderr',
+      message: `[ytlink] YTLINK_YTDLP_COOKIES_FILE no existe o no es un archivo: ${cookies.requested}`,
+    });
+  }
+
+  const args = buildDirectUrlArgs({ url, formatPreset, playlistMode });
+  const child = spawn(bin, args, {
+    shell: false,
+    windowsHide: true,
+  });
+
+  let stderrBuf = '';
+  let stdoutBuf = '';
+  const stdoutLines = [];
+
+  const handleStderrLine = (line) => {
+    const text = line.toString().trimEnd();
+    if (!text) return;
+    onEvent({ type: 'log', stream: 'stderr', message: text });
+    if (BOT_CHECK_RE.test(text)) {
+      onEvent({
+        type: 'log',
+        stream: 'stderr',
+        message:
+          '[ytlink] YouTube bot-check detectado. Verifica YTLINK_YTDLP_COOKIES_FILE y, si persiste, define YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS con po_token.',
+      });
+    }
+  };
+
+  const handleStdoutLine = (line) => {
+    const text = line.toString().trim();
+    if (!text) return;
+    stdoutLines.push(text);
+    onEvent({ type: 'log', stream: 'stdout', message: text });
+  };
+
+  child.stderr.on('data', (chunk) => {
+    stderrBuf += chunk.toString();
+    let idx;
+    while ((idx = stderrBuf.indexOf('\n')) >= 0) {
+      const line = stderrBuf.slice(0, idx);
+      stderrBuf = stderrBuf.slice(idx + 1);
+      handleStderrLine(line);
+    }
+  });
+
+  child.stdout.on('data', (chunk) => {
+    stdoutBuf += chunk.toString();
+    let idx;
+    while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
+      const line = stdoutBuf.slice(0, idx);
+      stdoutBuf = stdoutBuf.slice(idx + 1);
+      handleStdoutLine(line);
+    }
+  });
+
+  return new Promise((resolve) => {
+    child.on('close', (code) => {
+      if (stderrBuf.trim()) handleStderrLine(stderrBuf);
+      if (stdoutBuf.trim()) handleStdoutLine(stdoutBuf);
+
+      if (code !== 0) {
+        resolve({ ok: false, code });
+        return;
+      }
+
+      const directUrl = stdoutLines.find((line) => /^https?:\/\//i.test(line)) || '';
+      if (!directUrl) {
+        resolve({ ok: false, code, noUrlFound: true });
+        return;
+      }
+      resolve({ ok: true, directUrl });
+    });
+
+    child.on('error', (err) => {
+      resolve({
+        ok: false,
+        spawnError: err,
+        spawnAttempt: bin,
+      });
+    });
+  });
+}
+
+module.exports = {
+  runYtDlp,
+  runYtDlpGetDirectUrl,
+  ytDlpBinary,
+  buildArgs,
+  buildDirectUrlArgs,
+  resolveYtDlpCookiesPath,
+};
