@@ -1,6 +1,8 @@
 const fs = require('fs');
 const { spawn } = require('child_process');
 const path = require('path');
+const os = require('os');
+const { createHash } = require('crypto');
 const {
   resolveYtDlpExecutable,
   normalizeExecutablePath,
@@ -12,21 +14,62 @@ const {
  */
 function resolveYtDlpCookiesPath() {
   const raw = process.env.YTLINK_YTDLP_COOKIES_FILE;
-  if (raw == null || String(raw).trim() === '') {
-    return { path: null, missingRequested: false, requested: '' };
+  let missingRequested = false;
+  let requested = '';
+  if (raw != null && String(raw).trim() !== '') {
+    requested = String(raw).trim();
+    const abs = path.resolve(requested);
+    if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+      return { path: abs, missingRequested: false, requested: abs };
+    }
+    missingRequested = true;
   }
-  const requested = String(raw).trim();
-  const abs = path.resolve(requested);
-  if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
-    return { path: abs, missingRequested: false, requested: abs };
+
+  const rawB64 = process.env.YTLINK_YTDLP_COOKIES_B64;
+  if (rawB64 != null && String(rawB64).trim() !== '') {
+    const b64 = String(rawB64).trim();
+    try {
+      const decoded = Buffer.from(b64, 'base64').toString('utf8');
+      const looksLikeCookiesFile =
+        NETSCAPE_COOKIE_HEADER_RE.test(decoded) ||
+        NETSCAPE_COOKIE_ROW_RE.test(decoded);
+      if (decoded.trim() !== '' && looksLikeCookiesFile) {
+        const hash = createHash('sha1').update(b64).digest('hex').slice(0, 16);
+        const tmpPath = path.join(os.tmpdir(), `ytlink-cookies-${hash}.txt`);
+        fs.writeFileSync(tmpPath, decoded, 'utf8');
+        return {
+          path: tmpPath,
+          missingRequested: false,
+          requested: requested || tmpPath,
+          fromB64: true,
+        };
+      }
+      return {
+        path: null,
+        missingRequested,
+        requested,
+        invalidB64: true,
+      };
+    } catch {
+      return {
+        path: null,
+        missingRequested,
+        requested,
+        invalidB64: true,
+      };
+    }
   }
-  return { path: null, missingRequested: true, requested: abs };
+
+  return { path: null, missingRequested, requested };
 }
 
 const PROGRESS_RE = /\[download\]\s+(\d{1,3}\.\d)%/;
 const MERGER_RE = /\[Merger\]\s+Merging formats into\s+"(.+?)"/;
 const DEFAULT_YT_PLAYER_CLIENTS = 'tv_embedded,mweb,web_safari,default';
 const BOT_CHECK_RE = /Sign in to confirm you(?:'|’)re not a bot/i;
+const NETSCAPE_COOKIE_HEADER_RE = /#\s*Netscape\s+HTTP\s+Cookie\s+File/i;
+const NETSCAPE_COOKIE_ROW_RE =
+  /^[^\n\r\t]+\t(?:TRUE|FALSE)\t[^\n\r\t]*\t(?:TRUE|FALSE)\t\d+\t[^\n\r\t]+\t[^\n\r\t]*$/m;
 
 function parseUrlSafe(value) {
   try {
@@ -167,6 +210,14 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
       message: `[ytlink] YTLINK_YTDLP_COOKIES_FILE no existe o no es un archivo: ${cookies.requested}`,
     });
   }
+  if (cookies.invalidB64) {
+    onEvent({
+      type: 'log',
+      stream: 'stderr',
+      message:
+        '[ytlink] YTLINK_YTDLP_COOKIES_B64 no es válido o está vacío tras decodificar base64.',
+    });
+  }
   const args = buildArgs({ url, formatPreset, playlistMode, outDir });
   const child = spawn(bin, args, {
     shell: false,
@@ -175,6 +226,7 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
 
   let lastPercent = null;
   let mergedPath = null;
+  let botCheckDetected = false;
 
   const handleLine = (line, stream) => {
     const text = line.toString().trimEnd();
@@ -182,6 +234,7 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
 
     onEvent({ type: 'log', stream, message: text });
     if (stream === 'stderr' && BOT_CHECK_RE.test(text)) {
+      botCheckDetected = true;
       onEvent({
         type: 'log',
         stream: 'stderr',
@@ -238,6 +291,7 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
           ok: true,
           lastPercent,
           mergedPath,
+          botCheckDetected,
         });
       } else {
         resolve({
@@ -245,6 +299,7 @@ function runYtDlp(job, { url, formatPreset, playlistMode, outDir, onEvent }) {
           code,
           lastPercent,
           mergedPath,
+          botCheckDetected,
         });
       }
     });
@@ -269,6 +324,14 @@ function runYtDlpGetDirectUrl({ url, formatPreset, playlistMode, onEvent = () =>
       message: `[ytlink] YTLINK_YTDLP_COOKIES_FILE no existe o no es un archivo: ${cookies.requested}`,
     });
   }
+  if (cookies.invalidB64) {
+    onEvent({
+      type: 'log',
+      stream: 'stderr',
+      message:
+        '[ytlink] YTLINK_YTDLP_COOKIES_B64 no es válido o está vacío tras decodificar base64.',
+    });
+  }
 
   const args = buildDirectUrlArgs({ url, formatPreset, playlistMode });
   const child = spawn(bin, args, {
@@ -279,12 +342,14 @@ function runYtDlpGetDirectUrl({ url, formatPreset, playlistMode, onEvent = () =>
   let stderrBuf = '';
   let stdoutBuf = '';
   const stdoutLines = [];
+  let botCheckDetected = false;
 
   const handleStderrLine = (line) => {
     const text = line.toString().trimEnd();
     if (!text) return;
     onEvent({ type: 'log', stream: 'stderr', message: text });
     if (BOT_CHECK_RE.test(text)) {
+      botCheckDetected = true;
       onEvent({
         type: 'log',
         stream: 'stderr',
@@ -327,16 +392,16 @@ function runYtDlpGetDirectUrl({ url, formatPreset, playlistMode, onEvent = () =>
       if (stdoutBuf.trim()) handleStdoutLine(stdoutBuf);
 
       if (code !== 0) {
-        resolve({ ok: false, code });
+        resolve({ ok: false, code, botCheckDetected });
         return;
       }
 
       const directUrl = stdoutLines.find((line) => /^https?:\/\//i.test(line)) || '';
       if (!directUrl) {
-        resolve({ ok: false, code, noUrlFound: true });
+        resolve({ ok: false, code, noUrlFound: true, botCheckDetected });
         return;
       }
-      resolve({ ok: true, directUrl });
+      resolve({ ok: true, directUrl, botCheckDetected });
     });
 
     child.on('error', (err) => {

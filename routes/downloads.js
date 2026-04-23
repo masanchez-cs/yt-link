@@ -213,13 +213,16 @@ router.post('/downloads/direct-link', async (ctx) => {
   }
 
   if (!result.ok) {
+    const message = result.botCheckDetected
+      ? 'YouTube pidió verificación anti-bot. Configura YTLINK_YTDLP_COOKIES_FILE o YTLINK_YTDLP_COOKIES_B64 y, si persiste, define YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS con po_token.'
+      : result.noUrlFound
+        ? 'No fue posible obtener un enlace directo temporal para reproducir.'
+        : 'No fue posible generar un enlace directo. Verifica URL/cookies y vuelve a intentar.';
     return fail(
       ctx,
       502,
       'EXTERNAL_SERVICE_ERROR',
-      result.noUrlFound
-        ? 'No fue posible obtener un enlace directo temporal para reproducir.'
-        : 'No fue posible generar un enlace directo. Verifica URL/cookies y vuelve a intentar.',
+      message,
       [{ field: 'url', code: 'NO_DIRECT_URL', message: 'No direct URL returned' }],
     );
   }

@@ -203,9 +203,14 @@ export default function App() {
 
     setFormError('');
     setDirectBusy(true);
-    const popup = window.open('', '_blank');
+    let popup = window.open('', '_blank');
+    const useSameTabFallback =
+      !popup &&
+      window.confirm(
+        'El navegador bloqueó la ventana emergente. ¿Quieres abrir el enlace directo en esta misma pestaña?',
+      );
 
-    if (!popup) {
+    if (!popup && !useSameTabFallback) {
       setDirectBusy(false);
       setFormError(
         'El navegador bloqueó la ventana emergente. Permite pop-ups para abrir el reproductor directo.',
@@ -214,9 +219,11 @@ export default function App() {
     }
 
     try {
-      popup.document.write(
-        '<p style="font-family:system-ui;padding:16px">Generando enlace directo temporal...</p>',
-      );
+      if (popup && !useSameTabFallback) {
+        popup.document.write(
+          '<p style="font-family:system-ui;padding:16px">Generando enlace directo temporal...</p>',
+        );
+      }
       const res = await fetch(apiUrl('/api/downloads/direct-link'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -228,16 +235,20 @@ export default function App() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || !body.success || !body.data?.direct_url) {
-        popup.close();
+        if (popup && !useSameTabFallback) popup.close();
         const msg =
           body.message ||
           'No se pudo generar el enlace directo temporal. Intenta con otra URL.';
         setFormError(msg);
         return;
       }
+      if (useSameTabFallback) {
+        window.location.assign(body.data.direct_url);
+        return;
+      }
       popup.location.href = body.data.direct_url;
     } catch {
-      popup.close();
+      if (popup && !useSameTabFallback) popup.close();
       setFormError(
         'No hay conexión con el backend local. Ejecuta el servidor y recarga.',
       );
