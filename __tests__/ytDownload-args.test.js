@@ -4,6 +4,7 @@ describe('buildArgs youtube extractor args', () => {
   const { buildArgs } = require('../src/modules/ytDownload');
   const prevClients = process.env.YTLINK_YTDLP_PLAYER_CLIENTS;
   const prevExtraExtractorArgs = process.env.YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS;
+  const prevProxy = process.env.YTLINK_YTDLP_PROXY;
 
   afterEach(() => {
     if (prevClients === undefined) {
@@ -15,6 +16,11 @@ describe('buildArgs youtube extractor args', () => {
       delete process.env.YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS;
     } else {
       process.env.YTLINK_YTDLP_YOUTUBE_EXTRACTOR_ARGS = prevExtraExtractorArgs;
+    }
+    if (prevProxy === undefined) {
+      delete process.env.YTLINK_YTDLP_PROXY;
+    } else {
+      process.env.YTLINK_YTDLP_PROXY = prevProxy;
     }
   });
 
@@ -49,6 +55,26 @@ describe('buildArgs youtube extractor args', () => {
     const args = callBuildArgs();
     expect(args).toContain(
       'youtube:player_client=mweb;po_token=mweb.gvs+TOKEN_EJEMPLO',
+    );
+  });
+
+  it('agrega --proxy cuando YTLINK_YTDLP_PROXY está definido', () => {
+    process.env.YTLINK_YTDLP_PROXY = 'http://user:pass@proxy.resi:8080';
+    const args = callBuildArgs();
+    expect(args).toContain('--proxy');
+    expect(args).toContain('http://user:pass@proxy.resi:8080');
+  });
+
+  it('no agrega extractor-args de youtube para URL directa googlevideo', () => {
+    const args = buildArgs({
+      url: 'https://rr1---sn-abc.googlevideo.com/videoplayback?source=youtube&id=123',
+      formatPreset: 'mp4_best',
+      playlistMode: 'video_only',
+      outDir: path.resolve('.'),
+    });
+    expect(args).not.toContain('--extractor-args');
+    expect(args.some((a) => String(a).startsWith('youtube:player_client='))).toBe(
+      false,
     );
   });
 });

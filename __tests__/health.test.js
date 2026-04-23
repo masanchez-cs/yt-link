@@ -1,5 +1,6 @@
 const request = require('supertest');
 const app = require('../app');
+const downloadsRouter = require('../routes/downloads');
 
 describe('GET /api/health', () => {
   it('responde éxito con trace_id', async () => {
@@ -18,5 +19,15 @@ describe('POST /api/downloads', () => {
       .expect(400);
     expect(res.body.success).toBe(false);
     expect(res.body.error_code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('downloads URL support', () => {
+  it('acepta URL directa de googlevideo videoplayback', () => {
+    expect(
+      downloadsRouter.isSupportedDownloadUrl(
+        'https://rr1---sn-abc.googlevideo.com/videoplayback?source=youtube&id=xyz',
+      ),
+    ).toBe(true);
   });
 });

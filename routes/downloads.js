@@ -8,30 +8,39 @@ const { formatSpawnError } = require('../src/system/resolveYtDlp');
 
 const router = new Router();
 
+function isSupportedDownloadUrl(value) {
+  try {
+    const u = new URL(value);
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    const allowedYoutubeHosts = new Set([
+      'youtu.be',
+      'm.youtube.com',
+      'music.youtube.com',
+    ]);
+    const isYoutubeHost =
+      allowedYoutubeHosts.has(host) ||
+      host === 'youtube.com' ||
+      host.endsWith('.youtube.com');
+    if (isYoutubeHost) {
+      return true;
+    }
+    const isGoogleVideoDirect =
+      host.endsWith('.googlevideo.com') && u.pathname === '/videoplayback';
+    return isGoogleVideoDirect;
+  } catch {
+    return false;
+  }
+}
+
 const bodySchema = Joi.object({
   url: Joi.string()
     .uri()
     .required()
     .custom((value, helpers) => {
-      try {
-        const u = new URL(value);
-        const host = u.hostname.toLowerCase().replace(/^www\./, '');
-        const allowedExact = new Set([
-          'youtu.be',
-          'm.youtube.com',
-          'music.youtube.com',
-        ]);
-        const ok =
-          allowedExact.has(host) ||
-          host === 'youtube.com' ||
-          host.endsWith('.youtube.com');
-        if (!ok) {
-          return helpers.error('any.invalid');
-        }
-        return value;
-      } catch {
+      if (!isSupportedDownloadUrl(value)) {
         return helpers.error('any.invalid');
       }
+      return value;
     }),
   formatPreset: Joi.string()
     .valid('mp4_best', 'mp3', 'best')
@@ -184,3 +193,4 @@ router.get('/downloads/:id/events', async (ctx) => {
 });
 
 module.exports = router;
+module.exports.isSupportedDownloadUrl = isSupportedDownloadUrl;

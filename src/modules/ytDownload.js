@@ -28,6 +28,26 @@ const MERGER_RE = /\[Merger\]\s+Merging formats into\s+"(.+?)"/;
 const DEFAULT_YT_PLAYER_CLIENTS = 'tv_embedded,mweb,web_safari,default';
 const BOT_CHECK_RE = /Sign in to confirm you(?:'|’)re not a bot/i;
 
+function parseUrlSafe(value) {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function isYoutubeHost(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^www\./, '');
+  const allowedExact = new Set(['youtu.be', 'm.youtube.com', 'music.youtube.com']);
+  return allowedExact.has(host) || host === 'youtube.com' || host.endsWith('.youtube.com');
+}
+
+function shouldApplyYoutubeExtractorArgs(rawUrl) {
+  const parsed = parseUrlSafe(rawUrl);
+  if (!parsed) return true;
+  return isYoutubeHost(parsed.hostname);
+}
+
 function ytDlpBinary() {
   return resolveYtDlpExecutable();
 }
@@ -49,6 +69,14 @@ function resolveYoutubeExtractorArgsValue() {
   return `youtube:${parts.join(';')}`;
 }
 
+function resolveProxyArg() {
+  const raw = process.env.YTLINK_YTDLP_PROXY;
+  if (raw == null || String(raw).trim() === '') {
+    return '';
+  }
+  return String(raw).trim();
+}
+
 function buildArgs({ url, formatPreset, playlistMode, outDir }) {
   const args = [
     '--newline',
@@ -64,16 +92,25 @@ function buildArgs({ url, formatPreset, playlistMode, outDir }) {
     args.push('--ffmpeg-location', ffmpegLoc);
   }
 
+  const proxy = resolveProxyArg();
+  if (proxy) {
+    args.push('--proxy', proxy);
+  }
+
   const cookies = resolveYtDlpCookiesPath();
   if (cookies.path) {
     args.push('--cookies', cookies.path);
   }
-  // Desde IPs de datacenter (AWS) YouTube gatilla bot-check incluso sin cookies.
-  // Forzamos varios clients en orden y dejamos override por env para ajustes finos.
-  args.push(
-    '--extractor-args',
-    resolveYoutubeExtractorArgsValue(),
-  );
+  // Solo aplica al extractor de YouTube; enlaces directos de googlevideo
+  // usan extractor genérico y no requieren estos argumentos.
+  if (shouldApplyYoutubeExtractorArgs(url)) {
+    // Desde IPs de datacenter (AWS) YouTube gatilla bot-check incluso sin cookies.
+    // Forzamos varios clients en orden y dejamos override por env para ajustes finos.
+    args.push(
+      '--extractor-args',
+      resolveYoutubeExtractorArgsValue(),
+    );
+  }
 
   if (playlistMode === 'video_only') {
     args.push('--no-playlist');
